@@ -201,3 +201,107 @@ def b [] {
         null
     }
 }
+
+######################################################################
+# Capture exported environment changes from bash/sh/ksh scripts into Nushell.
+#
+# Usage:
+#   bash-env ./script.sh
+#   bash-env --shell sh ./script.sh
+#   bash-env --shell ksh ./script.ksh
+#
+# Notes:
+# - Captures exported env vars only.
+# - Captures new/changed variables.
+# - Does not remove Nushell env vars that the script unsets.
+
+def _bash_env_lines_to_record [] {
+  lines
+  | where {|line| $line != "" }
+  | parse --regex '^(?P<name>[^=]+)=(?P<value>.*)$'
+  | reduce -f {} {|row, acc|
+      $acc | upsert $row.name $row.value
+    }
+}
+
+def _bash_env_convert_value [
+  name: string
+  value: string
+] {
+  let conv = (try { $env.ENV_CONVERSIONS | get -o $name } catch { null })
+
+  if $conv != null {
+    try {
+      do $conv.from_string $value
+    } catch {
+      if $name in ["PATH", "Path"] {
+        $value | split row (char esep)
+      } else {
+        $value
+      }
+    }
+  } else if $name in ["PATH", "Path"] {
+    $value | split row (char esep)
+  } else {
+    $value
+  }
+}
+
+def _bash_env_changed_record [
+  before: record
+] {
+  transpose name value
+  | reduce -f {} {|row, acc|
+      let old = ($before | get -o $row.name)
+
+      if $old == $row.value {
+        $acc
+      } else {
+        let value = (_bash_env_convert_value $row.name $row.value)
+        $acc | upsert $row.name $value
+      }
+    }
+}
+
+def --env bash-env [
+  script: path
+  --shell (-s): string = "bash" # one of: bash, sh, ksh
+] {
+  if not ($shell in ["bash", "sh", "ksh"]) {
+    error make {
+      msg: $"bash-env: --shell must be one of: bash, sh, ksh; got '($shell)'"
+    }
+  }
+
+  let script_path = ($script | path expand)
+
+  if not ($script_path | path exists) {
+    error make {
+      msg: $"bash-env: script does not exist: ($script_path)"
+    }
+  }
+
+  let marker = $"__NU_BASH_ENV_MARKER_(random uuid)__"
+
+  let runner = '
+env
+printf "%s\n" "$2"
+. "$1" >/dev/null
+env
+'
+
+  let output = (^$shell -c $runner nu-bash-env $script_path $marker)
+  let parts = ($output | split row $marker)
+
+  if (($parts | length) < 2) {
+    error make {
+      msg: "bash-env: failed to capture shell environment"
+    }
+  }
+
+  let before = (($parts | get 0) | _bash_env_lines_to_record)
+  let after = (($parts | get 1) | _bash_env_lines_to_record)
+  let changes = ($after | _bash_env_changed_record $before)
+
+  load-env $changes
+}
