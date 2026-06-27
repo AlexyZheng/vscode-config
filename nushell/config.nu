@@ -53,7 +53,7 @@ $env.XMODIFIERS = "@im=fcitx"
 ######################################################################
 #Switch between shannon shell's with command "switch" - requires wayland, active ydotool socket & also bashrc config
 #could try embedding required bashrc string config within this file
-#otherwise just use termux as a terminal emulator
+#otherwise just use termux as a terminal emulator, it has onscreen keys
 
 $env.YDOTOOL_SOCKET = "/run/user/1000/.ydotool_socket"
 
