@@ -19,10 +19,9 @@
 
 
 # config shell environment
-fastfetch --logo none --config ~/.config/fastfetch/config.jsonc
 $env.config.show_banner = false
 $env.PROMPT_COMMAND_RIGHT = ""
-$env.config.buffer_editor = ["nano" -A -D -F -G -G -I -L -M -S -U -Z -a -q -_ -/]
+$env.config.buffer_editor = ["code", "-w"]
 
 
 $env.config = {
@@ -32,6 +31,16 @@ $env.config = {
         isolation: false       # Optional: Set to true if you want to isolate history per session
     }
 }
+
+$env.config = {
+    # ... your other configuration settings ...
+
+    display_errors: {
+        exit_code: false           # Keep this TRUE to see real program failures and errors
+        termination_signal: false # Keep this FALSE to silence the red error blocks on Ctrl+C / q
+    }
+}
+
 
 
 # Set Fcitx environment variables for the session
@@ -53,66 +62,105 @@ def switch [] {
 
 
 
-# Aliases
-alias nu = shannon
+#====================================================================
+# Core Dynamic Engine Resolution (Replaces static alias nu = shannon)
+#====================================================================
 
-def "sudo nano" [...args: string] {
-    ^sudo nano -A -D -F -G -I -L -M -S -U -Z -a -q '-_' '-/' ...$args
+# Detect if the custom 'shannon' binary exists on the system PATH
+let current_nu_exe = (if (which shannon | is-not-empty) { "shannon" } else { "nu" })
+
+# Ensure that whatever binary is active is exported to your interactive shell context
+alias nu = ^$current_nu_exe
+
+#====================================================================
+# Modern Administrative Execution Matrix (systemd-native)
+#====================================================================
+
+# Core Wrapper: Intercepts 'sudo' and routes securely through run0
+def --wrapped sudo [...args: string] {
+    if ($args | is-empty) {
+        # Open an interactive privileged root shell loading your styles using the detected binary
+        ^run0 --background="" --setenv=PATH $current_nu_exe --env-config $nu.env-path --config $nu.config-path
+    } else {
+        # Convert individual command arrays into a string payload
+        let cmd_string = ($args | str join " ")
+        
+        # Execute via setsid inside a sub-dash process for seamless Ctrl+C handling
+        ^run0 --background="" --setenv=PATH setsid dash -c $"($cmd_string)"
+    }
 }
 
-def nano [...args: string] {
-    ^sudo nano -A -D -F -G -I -L -M -S -U -Z -a -q '-_' '-/' ...$args
+
+# Run anti-unix nano with automatic systemd escalation (defaults to clean screen, use -l for line numbers)
+def nano [
+    ...args: string     # The files or arguments you want to pass
+    --line-numbers(-l)  # Switch to turn on line numbers and scroll bars
+] {
+    # 1. Base modern GUI flags (Mouse support, scroll-wheel, shortcuts, magic-line, no-backups)
+    let base_flags = ["-A" "-D" "-F" "-G" "-I" "-L" "-M" "-S" "-U" "-Z" "-a" "-q" "-_" "-/"]
+
+    # 2. Dynamically add line-number flags if the switch is active
+    let final_flags = if $line_numbers {
+        $base_flags | append ["-l"]
+    } else {
+        $base_flags
+    }
+
+    # 3. Securely forward your active environment and fire via systemd transient unit
+    # (Forces real root UID 0 execution while preserving essential PATH tracks)
+    run0 --setenv=PATH nano ...$final_flags ...$args
 }
 
-def "sudo nano -l" [...args: string] {
-    ^sudo nano -A -D -F -G -I -L -M -S -U -Z -a -l -q -l '-_' '-/' ...$args
-}
-
-def "nano -l" [...args: string] {
-    ^sudo nano -A -D -F -G -I -L -M -S -U -Z -a -l -q -l '-_' '-/' ...$args
-}
 
 alias vps = ssh ubuntu@work.76543211.xyz
+
+
+alias systemctl = sudo systemctl
+alias certbot   = sudo certbot
+alias apt-get   = sudo apt-get
+alias apt       = sudo apt
 alias yay = paru
 alias cachyos-rate-mirrors = sudo cachyos-rate-mirrors
-alias docker = sudo podman
-alias certbot = sudo certbot
-alias apt-get = sudo apt-get
-alias apt = sudo apt
 alias pacman = sudo pacman
-alias pacman.conf = sudo nano /etc/pacman.conf
-alias systemctl = sudo systemctl
+alias pacman.conf = nano /etc/pacman.conf
 # Text processing aliases (Nushell equivalents)
 alias cat = open
 
+# Display comprehensive local system metrics and host firmware info
+def sysinfo [] {
+    # 1. Fetch system details safely using modern sys commands
+    let host_data = (sys host | select hostname os_version kernel_version uptime)
 
-# 1. Fetch system details safely using modern sys commands
-let host_data = (sys host | select hostname os_version kernel_version uptime)
+    # 2. Extract BIOS firmware info
+    let bios_version = (try { open /sys/class/dmi/id/bios_version | str trim } catch { null })
 
-# 2. Extract BIOS firmware info
-let bios_version = (try { open /sys/class/dmi/id/bios_version | str trim } catch { null })
+    # 3. Merge all gathered metrics into one uniform Nushell Record
+    let result = (
+        $host_data
+        | insert bios_version $bios_version
+        | move bios_version --after hostname
+        | move os_version --after kernel_version
+    )
 
-# 4. Merge all gathered metrics into one uniform Nushell Record
-let result = (
-    $host_data
-    | insert bios_version $bios_version
-    | move bios_version --after hostname
-    | move os_version --after kernel_version
+    # 4. Filter out null/empty values using where with explicit row parameter
+    let filtered_result = (
+        $result
+        | transpose key value
 
-)
+        | where {|row| ($row.value | is-not-empty) and ($row.value != "")}
+        | transpose --header-row --as-record
+    )
 
-# 5. Filter out null/empty values using where with explicit row parameter
-let filtered_result = (
-    $result
-    | transpose key value
-    | where {|row| ($row.value | is-not-empty) and ($row.value != "")}
-    | transpose --header-row --as-record
-)
-
-# 6. Print system info record and uptime on separate lines
-if not ($filtered_result | is-empty) {
-    print ($filtered_result | reject uptime)
-    print $"  uptime: ($filtered_result | get uptime)"
+    # 5. Print system info record and uptime on separate lines
+    if not ($filtered_result | is-empty) {
+        # Check if uptime exists dynamically to avoid compilation schema crashes
+        if ($filtered_result | columns | any {|col| $col == "uptime"}) {
+            print ($filtered_result | reject uptime)
+            print $"  uptime: ($filtered_result | get uptime)"
+        } else {
+            print $filtered_result
+        }
+    }
 }
 
 ######################################################################################################
@@ -226,6 +274,22 @@ def _bash_env_changed_record [
     }
 }
 
+# Helper: Delete all .bak files created by history import
+def _bash_cleanup_backups [] {
+    let dir = ($nu.config-path | path dirname)
+    try {
+        ls $dir
+        | where name =~ "history.sqlite3.bak"
+        | each {|f| rm $f.name }
+    } catch {}
+}
+
+# Helper: Append a bash command to Nushell history via the official API
+def _bash_append_to_history [command: string] {
+    $command | history import
+    _bash_cleanup_backups
+}
+
 # Unified Bash Wrapper with Environment Sync and Automated Output Parsing
 def --env bash [
     script?: path                  # Optional script file path to execute
@@ -269,6 +333,9 @@ def --env bash [
         }
         $lines | str join "\n"
     }
+
+    # Sync the bash command into Nushell history (zero retained backups)
+    _bash_append_to_history $code
 
     # 3. Execute payload, capturing STDOUT/STDERR, and sync environments
     let raw_output = try {
@@ -315,11 +382,9 @@ def --env bash [
 
 
 
-
 #######################################################################################
+
 # Audit all active network sockets and listening ports as a structured table
-# Audit all active network sockets and listening ports using standard system 'ss'
-# Audit all active network sockets and listening ports using standard system 'ss'
 def ports [] {
     # -a (all), -t (tcp), -u (udp), -n (numeric ports), -p (show processes), -H (suppress header line)
     let raw = (^ss -atunpH | complete)
