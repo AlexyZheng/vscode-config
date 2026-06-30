@@ -1,3 +1,748 @@
+#:master-keybindings
+# author: CUA Modal 
+#
+# A CUA-style, selection-first modal keybinding set for master-key.
+# Two modes: WRITE (type text) and EDITOR (commands). Motions always
+# extend the selection (Kakoune-style); there is no separate select mode.
+#
+# Mode switching:
+# - Meta+Tab      : toggle EDITOR ↔ WRITE
+# - Meta+Space    : cycle EDITOR → WRITE → EDITOR
+# - Space         : collapse selection (drop to single cursor)
+# - Enter         : insert a new line after the cursor
+#
+# Multicursor (visual macros):
+# - d / shift+d   : match next / match all (add cursors at occurrences)
+# - q / shift+q   : cursor below / above
+# - ;             : split lines (cursor at end of each selected line)
+# - u             : undo last cursor operation (tap repeatedly)
+# - i / shift+i   : grow / shrink selection (semantic)
+# - [             : select to bracket
+# - r             : replace & write (cut → WRITE mode)
+# - j             : join lines
+# - ' / shift+[   : wrap selection in quotes / brackets
+# - / / shift+/   : lowercase / uppercase
+# - .             : repeat last action (not motion)
+# - z / shift+z   : undo / redo (text)
+#
+# Line operations & folding:
+# - shift+up/down : move line up / down
+# - shift+f       : toggle fold at cursor
+#
+# WRITE mode entry points (shift = "and type"):
+# - shift+enter   : new line below → WRITE
+# - ctrl+enter    : new line above → WRITE
+# - shift+home    : line start → WRITE
+# - shift+end     : line end → WRITE
+#
+# Count (visual multiplier): press 1-9 then a command. For cursor-spawning
+# commands the count is exact from a single selection (3d = 3 cursors).
+#
+# Navigation (all motions extend the selection):
+# - Arrows        : char extend (no mod) / word (Ctrl) / line-doc (Ctrl+Shift)
+# - Home/,        : line start
+# - End           : line end
+# - Ctrl+Home/End : page up/down
+#
+# Delete:
+# - x = cut (selection, or whole line if none)
+# - k = delete line (no clipboard)
+# - delete    = delete word right
+# - backspace = delete word left
+#
+# All EDITOR bindings are single keys (or modifier+arrow for the
+# char/word/line hierarchy). WRITE mode falls through to VS Code defaults.
+
+# ── 1. HEADER ──
+[header]
+name = "CUA Modal"
+version = "2.0.0"
+
+# ── 2. KINDS (must be declared for doc.kind validation) ──
+[[kind]]
+name = "motion"
+description = "Commands that move the cursor and/or extend selections."
+
+[[kind]]
+name = "action"
+description = "Actions that do something with text (cut, copy, paste, save, etc.)."
+
+[[kind]]
+name = "util"
+description = "Utility commands: mode switching, panels, file management."
+
+# ── 3. MODES ──
+# Two modes only. In EDITOR mode all motions extend the selection; use
+# Space to collapse the selection back to a single cursor.
+[[mode]]
+name = "-- ⌨️  WRITE --"
+default = true
+whenNoBinding = "insertCharacters"
+cursorShape = "LineThin"
+highlight = "Alert"
+
+[[mode]]
+name = "-- 📌 EDITOR --"
+cursorShape = "Block"
+highlight = "NoHighlight"
+
+# =============================================================================
+## ## Mode Switching
+# =============================================================================
+
+# Meta+Tab : EDITOR ↔ WRITE
+[[bind]]
+key = "meta+tab"
+mode = "-- ⌨️  WRITE --"
+command = "master-key.setMode"
+args.value = "-- 📌 EDITOR --"
+doc.kind = "util"
+doc.name = "to editor"
+doc.description = "exit write mode → editor mode"
+
+[[bind]]
+key = "meta+tab"
+mode = "-- 📌 EDITOR --"
+command = "master-key.setMode"
+args.value = "-- ⌨️  WRITE --"
+doc.kind = "util"
+doc.name = "to write"
+doc.description = "enter write mode"
+
+# Meta+Space : cycle EDITOR → WRITE → EDITOR
+[[bind]]
+key = "meta+space"
+mode = "-- 📌 EDITOR --"
+command = "master-key.setMode"
+args.value = "-- ⌨️  WRITE --"
+doc.kind = "util"
+doc.name = "→ write"
+doc.description = "cycle to write mode"
+
+[[bind]]
+key = "meta+space"
+mode = "-- ⌨️  WRITE --"
+command = "master-key.setMode"
+args.value = "-- 📌 EDITOR --"
+doc.kind = "util"
+doc.name = "→ editor"
+doc.description = "cycle to editor mode"
+
+# Space : collapse selection (drop to single cursor)
+#   Needed because motions always extend; this clears the selection.
+[[bind]]
+key = "space"
+mode = "-- 📌 EDITOR --"
+command = "cancelSelection"
+doc.kind = "util"
+doc.name = "collapse"
+doc.description = "collapse selection to a single cursor"
+
+# Escape : universal escape → EDITOR mode
+[[bind]]
+key = "escape"
+mode = "-- ⌨️  WRITE --"
+when = "master-key.mode == '-- ⌨️  WRITE --'"
+command = "master-key.setMode"
+args.value = "-- 📌 EDITOR --"
+doc.kind = "util"
+doc.name = "to editor"
+doc.description = "exit write mode → editor mode"
+# Accessible View binding for WRITE mode
+[[bind]]
+key = "ctrl+alt+`"
+mode = "-- ⌨️  WRITE --"
+command = "editor.action.accessibleView"
+doc.kind = "util"
+doc.name = "accessible view"
+doc.description = "open accessible view from write mode"
+
+# Accessible View binding for EDITOR mode
+[[bind]]
+key = "ctrl+alt+`"
+mode = "-- 📌 EDITOR --"
+command = "editor.action.accessibleView"
+doc.kind = "util"
+doc.name = "accessible view"
+doc.description = "open accessible view from editor mode"
+
+# Universal escape hatch back to EDITOR mode
+[[bind]]
+key = "ctrl+alt+escape"
+mode = "-- ⌨️  WRITE --"
+command = "master-key.setMode"
+args.value = "-- 📌 EDITOR --"
+doc.kind = "util"
+doc.name = "to editor"
+doc.description = "linux compatible terminal breakout"
+
+# 3. Escape: Focus document and close all surrounding panels
+[[bind]]
+key = "escape"
+mode = "-- 📌 EDITOR --"
+command = "runCommands"
+args.commands = [
+    "workbench.action.focusActiveEditorGroup",
+    "workbench.action.closePanel",
+    "workbench.action.closeSidebar"
+]
+doc.kind = "util"
+doc.name = "focus and clear layout"
+doc.description = "focus active file + close bottom panel + close sidebar panels"
+
+
+
+
+
+[[bind]]
+key = "ctrl+c"
+mode = "-- ⌨️  WRITE --"
+command = "master-key.setMode"
+args.value = "-- 📌 EDITOR --"
+doc.kind = "util"
+doc.name = "to editor via cancel control"
+
+# Enter : "wrappedLineFirstNonWhitespaceCharacter" 
+[[bind]]
+key = "enter"
+mode = "-- 📌 EDITOR --"
+command = "runCommands"
+args.commands = [
+    { command = "cursorMove", args = { to = "nextBlankLine" } },
+    { command = "cursorMove", args = { to = "down", by = "line", value = 1 } },
+    { command = "cursorMove", args = { to = "wrappedLineFirstNonWhitespaceCharacter" } },
+]
+tags = ["action"]
+doc.kind = "action"
+doc.name = "new line"
+doc.description = "insert a new line after the cursor"
+
+# =============================================================================
+## ## Clipboard (CUA)
+# =============================================================================
+
+# x = Cut (CUA Ctrl+X)
+#   With selection: cut selection.
+#   Without selection: cut entire line (expandLineSelection + cut).
+[[bind]]
+key = "x"
+mode = "-- 📌 EDITOR --"
+command = "editor.action.clipboardCutAction"
+when = "editorHasSelection"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "cut"
+doc.description = "cut selection"
+
+[[bind]]
+key = "x"
+mode = "-- 📌 EDITOR --"
+command = "runCommands"
+when = "!editorHasSelection"
+args.commands = [
+    "expandLineSelection",
+    "editor.action.clipboardCutAction",
+]
+tags = ["action"]
+doc.kind = "action"
+doc.name = "cut line"
+doc.description = "cut the entire line (no selection)"
+
+# k = Delete line (NO clipboard)
+[[bind]]
+key = "k"
+mode = "-- 📌 EDITOR --"
+command = "editor.action.deleteLines"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "delete line"
+doc.description = "delete the current line (no clipboard)"
+
+# delete = Delete word right (CUA Ctrl+Delete, drop Ctrl)
+[[bind]]
+key = "delete"
+mode = "-- 📌 EDITOR --"
+command = "deleteWordRight"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "del word →"
+doc.description = "delete word to the right"
+
+# backspace = Delete word left (CUA Ctrl+Backspace, drop Ctrl)
+[[bind]]
+key = "backspace"
+mode = "-- 📌 EDITOR --"
+command = "deleteWordLeft"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "del word ←"
+doc.description = "delete word to the left"
+
+# c = Copy
+[[bind]]
+key = "c"
+mode = "-- 📌 EDITOR --"
+command = "editor.action.clipboardCopyAction"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "copy"
+doc.description = "copy selection"
+
+# v = Paste
+[[bind]]
+key = "v"
+mode = "-- 📌 EDITOR --"
+command = "editor.action.clipboardPasteAction"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "paste"
+doc.description = "paste clipboard"
+
+# =============================================================================
+## ## History (text undo/redo + repeat last action)
+# =============================================================================
+
+# z = Undo (text)
+[[bind]]
+key = "z"
+mode = "-- 📌 EDITOR --"
+command = "undo"
+tags = ["action", "history"]
+doc.kind = "action"
+doc.name = "undo"
+doc.description = "undo"
+
+# y = Redo (text)
+[[bind]]
+key = "y"
+mode = "-- 📌 EDITOR --"
+command = "redo"
+tags = ["action", "history"]
+doc.kind = "action"
+doc.name = "redo"
+doc.description = "redo"
+
+# printscreen = Repeat last action (not motion, not history commands)
+#   CUA mnemonic: "ditto". Repeats the most recent action-tagged binding.
+[[bind]]
+key = "shift+z"
+mode = "-- 📌 EDITOR --"
+command = "runCommands"
+repeat = "{{key.count}}"
+tags = ["action", "history"]
+doc.kind = "action"
+doc.name = "repeat action"
+doc.description = "repeat the last action (not a motion)"
+
+[[bind.args.commands]]
+command = "master-key.replayFromHistory"
+args.index = """{{
+last_history_index(|i|
+    history[i]?.tags.contains("action") &&
+    !(history[i]?.tags.contains("history") && history[i]?.doc.name != "replay")
+)}}"""
+
+# =============================================================================
+## ## File / Tabs
+# =============================================================================
+
+[[bind]]
+key = "s"
+mode = "-- 📌 EDITOR --"
+command = "workbench.action.files.save"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "save"
+doc.description = "save file"
+
+[[bind]]
+key = "o"
+mode = "-- 📌 EDITOR --"
+command = "workbench.action.files.openFile"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "open"
+doc.description = "open file…"
+
+[[bind]]
+key = "t"
+mode = "-- 📌 EDITOR --"
+command = "workbench.action.files.newUntitledFile"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "new tab"
+doc.description = "new untitled file"
+
+[[bind]]
+key = "shift+t"
+mode = "-- 📌 EDITOR --"
+command = "workbench.action.reopenClosedEditor"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "reopen tab"
+doc.description = "reopen closed tab"
+
+[[bind]]
+key = "w"
+mode = "-- 📌 EDITOR --"
+command = "workbench.action.closeActiveEditor"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "close tab"
+doc.description = "close active editor"
+
+[[bind]]
+key = "p"
+mode = "-- 📌 EDITOR --"
+command = "workbench.action.quickOpen"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "quick open"
+doc.description = "quick open file palette"
+
+# =============================================================================
+## ## Find & Navigate
+# =============================================================================
+
+[[bind]]
+key = "f"
+mode = "-- 📌 EDITOR --"
+command = "actions.find"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "find"
+doc.description = "find"
+
+[[bind]]
+key = "h"
+mode = "-- 📌 EDITOR --"
+command = "editor.action.startFindReplaceAction"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "replace"
+doc.description = "find & replace"
+
+[[bind]]
+key = "g"
+mode = "-- 📌 EDITOR --"
+command = "workbench.action.gotoLine"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "go to line"
+doc.description = "go to line…"
+
+[[bind]]
+key = "a"
+mode = "-- 📌 EDITOR --"
+command = "editor.action.selectAll"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "select all"
+doc.description = "select all"
+
+# =============================================================================
+## ## Panels
+# =============================================================================
+
+[[bind]]
+key = "b"
+mode = "-- 📌 EDITOR --"
+command = "workbench.action.toggleSidebarVisibility"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "sidebar"
+doc.description = "toggle sidebar"
+
+[[bind]]
+key = "e"
+mode = "-- 📌 EDITOR --"
+command = "runCommands"
+args.commands = [
+    "workbench.view.explorer",
+    "workbench.action.focusActiveEditorGroup",
+]
+tags = ["action"]
+doc.kind = "action"
+doc.name = "explorer"
+doc.description = "open explorer view (keeps cursor in editor)"
+
+[[bind]]
+key = "l"
+mode = "-- 📌 EDITOR --"
+command = "workbench.actions.view.problems"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "problems"
+doc.description = "toggle problems panel"
+
+[[bind]]
+key = "m"
+mode = "-- 📌 EDITOR --"
+command = "editor.action.toggleMinimap"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "minimap"
+doc.description = "toggle minimap"
+
+# =============================================================================
+## ## Count (visual multiplier)
+# =============================================================================
+# Press digits 1-9 (and 0) to build a count shown in the status bar, then
+# press a count-aware command to apply it. For cursor-spawning commands the
+# count is exact from a single selection (3d = 3 cursors total).
+# `finalKey = false` so digits accumulate (12 = twelve) without firing.
+# Active only in EDITOR — in WRITE mode digits type normally.
+
+[[bind]]
+foreach.num = ['{{keys(`[0-9]`)}}']
+key = "{{num}}"
+mode = "-- 📌 EDITOR --"
+command = "master-key.updateCount"
+args.value = "{{num}}"
+finalKey = false
+doc.kind = "util"
+doc.name = "count {{num}}"
+doc.description = "add digit {{num}} to the count (visual multiplier)"
+doc.combined.key = "0-9"
+doc.combined.name = "count 0-9"
+doc.combined.description = "build a count shown in the status bar"
+
+[[bind]]
+foreach.num = ['{{keys(`[0-9]`)}}']
+key = "numpad{{num}}"
+mode = "-- 📌 EDITOR --"
+command = "master-key.updateCount"
+args.value = "{{num}}"
+finalKey = false
+doc.kind = "util"
+doc.name = "count {{num}} (numpad)"
+doc.description = "add digit {{num}} to the count (numpad)"
+doc.hideInPalette = true
+doc.hideInDocs = true
+
+# =============================================================================
+## ## Multicursor (visual macros)
+# =============================================================================
+# Kakoune-style: motions always extend, so selections are the primary editing
+# unit. Spawn cursors from the current selection, then any edit applies to all
+# cursors at once. Count is exact from a single selection (3d = 3 cursors).
+
+# d = match next (add cursor at next occurrence of selection)
+#   CUA mnemonic: "duplicate" cursor at next match. Count is exact: from one
+#   selection, 3d yields 3 cursors (repeats add-selection N-1 times).
+[[bind]]
+key = "d"
+mode = "-- 📌 EDITOR --"
+command = "runCommands"
+repeat = "{{max(key.count - 1, 0)}}"
+args.commands = ["editor.action.addSelectionToNextFindMatch"]
+tags = ["action"]
+doc.kind = "action"
+doc.name = "match next"
+doc.description = "add a cursor at the next match of the selection"
+
+# shift+d = match all (cursor on every occurrence)
+[[bind]]
+key = "shift+d"
+mode = "-- 📌 EDITOR --"
+command = "editor.action.selectHighlights"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "match all"
+doc.description = "add a cursor on every occurrence of the selection"
+
+# q = cursor below (add a cursor on the next line)
+#   CUA mnemonic: "queue" a cursor below. Count is exact from one cursor.
+[[bind]]
+key = "q"
+mode = "-- 📌 EDITOR --"
+command = "runCommands"
+repeat = "{{max(key.count - 1, 0)}}"
+args.commands = ["editor.action.insertCursorBelow"]
+tags = ["action"]
+doc.kind = "action"
+doc.name = "cursor ↓"
+doc.description = "add a cursor on the next line below"
+
+# shift+q = cursor above
+[[bind]]
+key = "shift+q"
+mode = "-- 📌 EDITOR --"
+command = "runCommands"
+repeat = "{{max(key.count - 1, 0)}}"
+args.commands = ["editor.action.insertCursorAbove"]
+tags = ["action"]
+doc.kind = "action"
+doc.name = "cursor ↑"
+doc.description = "add a cursor on the previous line above"
+
+# ; = split lines (cursor at end of each selected line)
+[[bind]]
+key = ";"
+mode = "-- 📌 EDITOR --"
+command = "editor.action.insertCursorAtEndOfEachLineSelected"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "split lines"
+doc.description = "add a cursor at the end of each selected line"
+
+# u = undo cursor (remove last cursor operation; tap repeatedly)
+#   Distinct from z (text undo): u undoes cursor state only.
+[[bind]]
+key = "u"
+mode = "-- 📌 EDITOR --"
+command = "cursorUndo"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "undo cursor"
+doc.description = "remove the last cursor operation (tap repeatedly)"
+
+# i = grow selection (semantic: word → string → block → document)
+#   CUA mnemonic: "increase" the selection. Count repeats the growth.
+[[bind]]
+key = "i"
+mode = "-- 📌 EDITOR --"
+command = "runCommands"
+repeat = "{{key.count}}"
+args.commands = ["editor.action.smartSelect.expand"]
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "grow"
+doc.description = "grow the selection to the next semantic unit"
+
+# shift+i = shrink selection
+[[bind]]
+key = "shift+i"
+mode = "-- 📌 EDITOR --"
+command = "runCommands"
+repeat = "{{key.count}}"
+args.commands = ["editor.action.smartSelect.shrink"]
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "shrink"
+doc.description = "shrink the selection to the previous semantic unit"
+
+# [ = select to bracket (select inside the matching bracket pair)
+[[bind]]
+key = "["
+mode = "-- 📌 EDITOR --"
+command = "editor.action.selectToBracket"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "to bracket"
+doc.description = "select inside the matching bracket pair"
+
+# r = replace & write (cut selection, then enter WRITE to type replacement)
+#   CUA mnemonic: "replace". Flows into WRITE for ergonomic typing.
+[[bind]]
+key = "r"
+mode = "-- 📌 EDITOR --"
+command = "runCommands"
+args.commands = [
+    "editor.action.clipboardCutAction",
+    { command = "master-key.setMode", args = { value = "-- ⌨️  WRITE --" } },
+]
+tags = ["action"]
+doc.kind = "action"
+doc.name = "replace → write"
+doc.description = "cut selection and enter write mode to type the replacement"
+
+# j = join lines
+#   CUA mnemonic: "join".
+[[bind]]
+key = "j"
+mode = "-- 📌 EDITOR --"
+command = "editor.action.joinLines"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "join"
+doc.description = "join the selected lines into one"
+
+# ' = wrap selection in double quotes
+[[bind]]
+key = "'"
+mode = "-- 📌 EDITOR --"
+command = "editor.action.insertSnippet"
+args.snippet = "\"${TM_SELECTED_TEXT}\""
+tags = ["action"]
+doc.kind = "action"
+doc.name = "wrap \""
+doc.description = "wrap the selection in double quotes"
+
+# shift+[ = wrap selection in square brackets
+[[bind]]
+key = "shift+["
+mode = "-- 📌 EDITOR --"
+command = "editor.action.insertSnippet"
+args.snippet = "[${TM_SELECTED_TEXT}]"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "wrap [ ]"
+doc.description = "wrap the selection in square brackets"
+
+# / = transform to lowercase (points down → lowercase)
+[[bind]]
+key = "/"
+mode = "-- 📌 EDITOR --"
+command = "editor.action.transformToLowercase"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "lowercase"
+doc.description = "transform the selection to lowercase"
+
+# shift+/ = transform to uppercase
+[[bind]]
+key = "shift+/"
+mode = "-- 📌 EDITOR --"
+command = "editor.action.transformToUppercase"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "uppercase"
+doc.description = "transform the selection to uppercase"
+
+# =============================================================================
+## ## Line operations & folding
+# =============================================================================
+# Shift+arrow = act on the line (vs plain arrow = select). CUA hierarchy:
+#   plain arrow  = extend selection
+#   shift+arrow  = move the line / fold
+
+# shift+up = move line (or selection) up
+[[bind]]
+key = "shift+up"
+mode = "-- 📌 EDITOR --"
+command = "editor.action.moveLinesUpAction"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "move line ↑"
+doc.description = "move the current line/selection up"
+
+# shift+down = move line (or selection) down
+[[bind]]
+key = "shift+down"
+mode = "-- 📌 EDITOR --"
+command = "editor.action.moveLinesDownAction"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "move line ↓"
+doc.description = "move the current line/selection down"
+
+# shift+f = toggle fold at cursor (fold ↔ unfold)
+[[bind]]
+key = "shift+f"
+mode = "-- 📌 EDITOR --"
+command = "editor.toggleFold"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "toggle fold"
+doc.description = "fold or unfold the block at the cursor"
+
+# =============================================================================
+## ## WRITE mode entry points
+# =============================================================================
+# Shift = "and type". Each enters WRITE mode at a useful location, so you can
+# start typing immediately without a separate mode switch.
+
 [[bind]]
 key = "shift+enter"
 mode = "-- 📌 EDITOR --"
@@ -6,3 +751,329 @@ tags = ["action"]
 doc.kind = "action"
 doc.name = "open line above"
 doc.description = "open a new line above and stay in editor mode"
+
+
+# shift+enter = new line below → WRITE
+[[bind]]
+key = "ctrl+shift+enter"
+mode = "-- 📌 EDITOR --"
+command = "runCommands"
+args.commands = [
+    "editor.action.insertLineAfter",
+    { command = "master-key.setMode", args = { value = "-- ⌨️  WRITE --" } },
+]
+tags = ["action"]
+doc.kind = "action"
+doc.name = "open below → write"
+doc.description = "open a new line below and enter write mode"
+
+# ctrl+shift+enter = new line above → WRITE
+[[bind]]
+key = "shift+ctrl+enter"
+mode = "-- 📌 EDITOR --"
+command = "runCommands"
+args.commands = [
+    "editor.action.insertLineBefore",
+    { command = "master-key.setMode", args = { value = "-- ⌨️  WRITE --" } },
+]
+tags = ["action"]
+doc.kind = "action"
+doc.name = "open above → write"
+doc.description = "open a new line above and enter write mode"
+
+# shift+home = go to line start → WRITE
+[[bind]]
+key = "shift+home"
+mode = "-- 📌 EDITOR --"
+command = "runCommands"
+args.commands = [
+    "cursorLineStart",
+    { command = "master-key.setMode", args = { value = "-- ⌨️  WRITE --" } },
+]
+tags = ["action"]
+doc.kind = "action"
+doc.name = "line start → write"
+doc.description = "move to start of line and enter write mode"
+
+# shift+end = go to line end → WRITE
+[[bind]]
+key = "shift+end"
+mode = "-- 📌 EDITOR --"
+command = "runCommands"
+args.commands = [
+    "cursorLineEnd",
+    { command = "master-key.setMode", args = { value = "-- ⌨️  WRITE --" } },
+]
+tags = ["action"]
+doc.kind = "action"
+doc.name = "line end → write"
+doc.description = "move to end of line and enter write mode"
+
+# =============================================================================
+## ## Navigation (all motions extend the selection)
+# =============================================================================
+# Arrow hierarchy (consistent modifier levels):
+#   (none)      = char extend
+#   Ctrl        = word extend
+#   Ctrl+Shift  = line/doc level extend
+# All variants use *Select commands so the selection grows as you move.
+
+# ── Arrows: char extend ──
+[[bind]]
+key = "left"
+mode = "-- 📌 EDITOR --"
+command = "cursorLeftSelect"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "← extend"
+doc.description = "extend selection left"
+
+[[bind]]
+key = "right"
+mode = "-- 📌 EDITOR --"
+command = "cursorRightSelect"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "→ extend"
+doc.description = "extend selection right"
+
+[[bind]]
+key = "up"
+mode = "-- 📌 EDITOR --"
+command = "cursorUpSelect"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "↑ extend"
+doc.description = "extend selection up"
+
+[[bind]]
+key = "down"
+mode = "-- 📌 EDITOR --"
+command = "cursorDownSelect"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "↓ extend"
+doc.description = "extend selection down"
+
+# ── Ctrl+Arrows: word extend ──
+[[bind]]
+key = "ctrl+left"
+mode = "-- 📌 EDITOR --"
+command = "cursorWordLeftSelect"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "word ← extend"
+doc.description = "extend selection to previous word"
+
+[[bind]]
+key = "ctrl+right"
+mode = "-- 📌 EDITOR --"
+command = "cursorWordRightSelect"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "word → extend"
+doc.description = "extend selection to next word"
+
+# ── Ctrl+Shift+Arrows: line/doc level extend ──
+[[bind]]
+key = "ctrl+shift+left"
+mode = "-- 📌 EDITOR --"
+command = "cursorLineStartSelect"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "line start extend"
+doc.description = "extend selection to start of line"
+
+[[bind]]
+key = "ctrl+shift+right"
+mode = "-- 📌 EDITOR --"
+command = "cursorLineEndSelect"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "line end extend"
+doc.description = "extend selection to end of line"
+
+[[bind]]
+key = "ctrl+shift+up"
+mode = "-- 📌 EDITOR --"
+command = "cursorTopSelect"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "doc top extend"
+doc.description = "extend selection to top of document"
+
+[[bind]]
+key = "ctrl+shift+down"
+mode = "-- 📌 EDITOR --"
+command = "cursorBottomSelect"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "doc bottom extend"
+doc.description = "extend selection to bottom of document"
+
+# ── Home/End: line start/end extend ──
+[[bind]]
+key = "home"
+mode = "-- 📌 EDITOR --"
+command = "cursorLineStartSelect"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "line start extend"
+doc.description = "extend selection to start of line"
+
+[[bind]]
+key = "end"
+mode = "-- 📌 EDITOR --"
+command = "cursorLineEndSelect"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "line end extend"
+doc.description = "extend selection to end of line"
+
+# ── , / . : line start/end extend (ergonomic alternatives to Home/End) ──
+[[bind]]
+key = ","
+mode = "-- 📌 EDITOR --"
+command = "cursorLineStartSelect"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "line start extend"
+doc.description = "extend selection to start of line (alt to Home)"
+
+[[bind]]
+key = "."
+mode = "-- 📌 EDITOR --"
+command = "cursorLineEndSelect"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "line end extend"
+doc.description = "extend selection to end of line (alt to End)"
+
+# ── Ctrl+Home/End: page up/down extend ──
+[[bind]]
+key = "ctrl+home"
+mode = "-- 📌 EDITOR --"
+command = "cursorPageUpSelect"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "page ↑ extend"
+doc.description = "page up, extending selection"
+
+[[bind]]
+key = "ctrl+end"
+mode = "-- 📌 EDITOR --"
+command = "cursorPageDownSelect"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "page ↓ extend"
+doc.description = "page down, extending selection"
+
+# =============================================================================
+## ## Format (language-specific)
+# =============================================================================
+# `=` formats the document; scoped per language via `when = "editorLangId"`.
+# `shift+=` jumps to the matching bracket (useful in structured formats).
+
+# ── YAML ──
+[[bind]]
+key = "="
+mode = "-- 📌 EDITOR --"
+when = "editorLangId == 'yaml'"
+command = "editor.action.formatDocument"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "format (yaml)"
+doc.description = "format the YAML document"
+
+# ── JSON ──
+[[bind]]
+key = "="
+mode = "-- 📌 EDITOR --"
+when = "editorLangId == 'json'"
+command = "editor.action.formatDocument"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "format (json)"
+doc.description = "format the JSON document"
+
+[[bind]]
+key = "="
+mode = "-- 📌 EDITOR --"
+when = "editorLangId == 'jsonc'"
+command = "editor.action.formatDocument"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "format (jsonc)"
+doc.description = "format the JSONC document"
+
+# ── XML ──
+# NOTE: requires the `redhat.vscode-xml` extension to be installed.
+[[bind]]
+key = "="
+mode = "-- 📌 EDITOR --"
+when = "editorLangId == 'xml'"
+command = "editor.action.formatDocument"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "format (xml)"
+doc.description = "format the XML document (requires redhat.vscode-xml)"
+
+# ── Nushell (NUON data files) ──
+# Format via a task that runs `nu` with `to nuon` (no built-in `nu fmt`).
+[[bind]]
+key = "="
+mode = "-- 📌 EDITOR --"
+when = "editorLangId == 'nushell' && resourceExtname == '.nuon'"
+command = "workbench.action.tasks.runTask"
+args.task = "nuon-format"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "format (nuon)"
+doc.description = "format the NUON data file via nushell"
+
+# ── Nushell (.nu scripts) ──
+# Format via nufmt (AST-aware, first-party nushell formatter).
+[[bind]]
+key = "="
+mode = "-- 📌 EDITOR --"
+when = "editorLangId == 'nushell' && resourceExtname == '.nu'"
+command = "workbench.action.tasks.runTask"
+args.task = "nu-format"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "format (nu)"
+doc.description = "format the nushell script via nufmt"
+
+# shift+e = evaluate the nushell script (output to terminal)
+[[bind]]
+key = "shift+e"
+mode = "-- 📌 EDITOR --"
+when = "editorLangId == 'nushell'"
+command = "workbench.action.tasks.runTask"
+args.task = "nuon-eval"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "eval (nuon)"
+doc.description = "evaluate the nushell script and show output"
+
+# shift+p = parse the NUON file and print it as JSON (validates structure)
+[[bind]]
+key = "shift+p"
+mode = "-- 📌 EDITOR --"
+when = "editorLangId == 'nushell'"
+command = "workbench.action.tasks.runTask"
+args.task = "nuon-parse"
+tags = ["action"]
+doc.kind = "action"
+doc.name = "parse → json (nuon)"
+doc.description = "parse the NUON file and print it as JSON"
+
+# ── Jump to bracket (language-agnostic, useful in structured formats) ──
+[[bind]]
+key = "shift+="
+mode = "-- 📌 EDITOR --"
+command = "editor.action.jumpToBracket"
+tags = ["motion"]
+doc.kind = "motion"
+doc.name = "jump bracket"
+doc.description = "jump to the matching bracket"
