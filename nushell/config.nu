@@ -129,13 +129,18 @@ def nano [
 ### Reload Nushell cleanly on Linux by replacing the active process
 
 def reload [] {}
-
-  def --env "reload nu" [] {
+def --env "reload nu" [] {
 let timestamp = (date now | format date "%H:%M:%S")
 print $"(ansi green)Config reloaded at ($timestamp)!(ansi reset)"
 exec nu
-}
 
+
+
+
+
+
+
+}
 
 alias vps = ssh ubuntu@work.76543211.xyz
 
@@ -191,232 +196,26 @@ def sysinfo [] {
     }
 }
 
-######################################################################################################
-# Helper: Generate the interactive bash prompt
-def bash_prompt [] {
-    let user = $env.USER? | default "user"
-    # OPTIMIZATION: $nu.os-info is cached and instant compared to 'sys host'
-    let host = $nu.os-info.hostname? | default "bash"
-    let raw_pwd = $env.PWD
-    let home = $env.HOME? | default ""
 
-    let current_dir = if $home != "" and $raw_pwd == $home {
-        "~"
-    } else if $home != "" and ($raw_pwd | str starts-with $home) {
-        $raw_pwd | str replace $home "~"
+
+# 1. Back up the original, native 'open' command under a new name
+alias native-open = open
+
+# 2. Redefine 'open' safely using the backed-up version
+def open [path: path, --raw (-r)] {
+    let ext = ($path | path parse | get extension | str downcase)
+    let data_exts = ['csv' 'json' 'md' 'msgpack' 'msgpackz' 'nuon' 'ods' 'ssv' 'toml' 'tsv' 'xlsx' 'xml' 'yaml' 'yml']
+    
+    # Check if file matches your list and --raw wasn't passed
+    if ($ext in $data_exts) and (not $raw) {
+        native-open $path | explore
     } else {
-        $raw_pwd | path basename
-    }
-
-    $"[($user)@($host) ($current_dir)]$ "
-}
-
-# Helper: Detect line continuations (\)
-def bash_has_line_continuation [code: string] {
-    let last_line = (
-        $code
-        | lines
-        | last
-        | default ""
-        | str trim --right
-    )
-    $last_line | str ends-with '\'
-}
-
-def bash_needs_more [code: string] {
-    if (bash_has_line_continuation $code) {
-        return true
-    }
-
-    let check = (^bash -n -c $code | complete)
-    let stderr = $check.stderr | default ""
-
-    if $check.exit_code == 0 {
-        return (
-            ($stderr | str contains "here-document")
-            and ($stderr | str contains "delimited by end-of-file")
-        )
-    }
-
-    let incomplete_markers = [
-        "unexpected EOF"
-        "unexpected end of file"
-        "syntax error: unexpected end of file"
-        "looking for matching"
-    ]
-
-    $incomplete_markers | any {|marker|
-        $stderr | str contains $marker
-    }
-}
-
-def _bash_env_lines_to_record [] {
-    lines
-    | where {|line| $line != "" }
-    | parse --regex '^(?P<name>[^=]+)=(?P<value>.*)$'
-    | reduce -f {} {|row, acc|
-      $acc | upsert $row.name $row.value
-    }
-}
-
-def _bash_env_convert_value [name: string, value: string] {
-    let conv = (
-        try {
-            $env.ENV_CONVERSIONS | get -o $name
-        } catch { null }
-    )
-
-    if $conv != null {
-        try {
-            do $conv.from_string $value
-        } catch {
-            if $name in ["PATH", "Path"] {
-                $value | split row (char esep)
-            } else {
-                $value
-            }
-        }
-    } else if $name in ["PATH", "Path"] {
-        $value | split row (char esep)
-    } else {
-        $value
-    }
-}
-
-def _bash_env_changed_record [before: record] {
-    transpose name value
-    | reduce -f {} {|row, acc|
-      let old = $before | get -o $row.name
-
-      if $old == $row.value {
-        $acc
-      } else {
-        let value = (_bash_env_convert_value $row.name $row.value)
-        $acc | upsert $row.name $value
-      }
-    }
-}
-
-def _bash_cleanup_backups [] {
-    let dir = $nu.config-path | path dirname
-    try {
-        ls $dir
-        | where name =~ "history.sqlite3.bak"
-        | each {|f| rm $f.name }
-    } catch { }
-}
-
-def _bash_append_to_history [command: string] {
-    $command | history import
-    _bash_cleanup_backups
-}
-
-def --env bash [script?: path, --format(-f): string = "auto"] {
-    let before_path = (mktemp)
-    let after_path = (mktemp)
-
-    let code = if $script != null {
-        let script_path = $script | path expand
-        if not ($script_path | path exists) {
-            try { rm $before_path $after_path } catch { }
-            error make {msg: $"bash: script does not exist: ($script_path)"}
-        }
-        $". '($script_path)'"
-    } else {
-        mut lines = []
-        loop {
-            let prompt = if ($lines | is-empty) {
-                bash_prompt
-            } else {
-                "bash> "
-            }
-
-            let line = try {
-                input --reedline $prompt
-            } catch {
-                try { rm $before_path $after_path } catch { }
-                return
-            }
-
-            $lines = ($lines | append $line)
-            let current_code = $lines | str join "\n"
-
-            if not (bash_needs_more $current_code) {
-                break
-            }
-        }
-        $lines | str join "\n"
-    }
-
-    _bash_append_to_history $code
-
-    let raw_output = try {
-        let exec = (
-            ^bash -c 'env > "$1"; eval "$3"; env > "$2"' nu-bash-env $before_path $after_path $code
-            | complete
-        )
-
-        if ($exec.stderr | str trim) != "" {
-            print -e $exec.stderr
-        }
-
-        let before = open --raw $before_path | _bash_env_lines_to_record
-        let after = open --raw $after_path | _bash_env_lines_to_record
-        let changes = $after | _bash_env_changed_record $before
-
-        load-env $changes
-        $exec.stdout
-    } catch {
-        null
-    }
-
-    try { rm $before_path $after_path } catch { }
-
-    if $raw_output != null and ($raw_output | str trim) != "" {
-        match $format {
-            "json" => {
-                $raw_output | from json
-            }
-            "csv" => {
-                $raw_output | from csv
-            }
-            "yaml" => {
-                $raw_output | from yaml
-            }
-            "lines" => {
-                $raw_output | lines
-            }
-            "columns" => {
-                $raw_output | detect columns --guess
-            }
-            _ => {
-                let trimmed_out = $raw_output | str trim
-                if ($trimmed_out | str starts-with "{") or ($trimmed_out | str starts-with "[") {
-                    try {
-                        $raw_output | from json
-                    } catch {
-                        $raw_output | lines
-                    }
-                } else {
-                    try {
-                        $raw_output | detect columns --guess
-                    } catch {
-                        $raw_output | lines
-                    }
-                }
-            }
-        }
+        native-open $path
     }
 }
 
 
-
-######################################################################################################
-# Ports Scanner
-######################################################################################################
-
-
-def ports [] {
+export def ports [] {
     let raw = (^ss -atunpH | complete)
     if $raw.exit_code != 0 or ($raw.stdout | str trim | is-empty) { return [] }
 
@@ -427,18 +226,204 @@ def ports [] {
         # Split from the right side to isolate port numbers from IPv4, IPv6, and wildcards safely
         let parts = $r.local | split row ":"
         try { $parts | last | into int } catch { null }
-      }
+    }
     | insert pid {|r|
         if ($r.process? | is-empty) { null } else {
             let matches = $r.process | parse --regex 'pid=(?P<id>\d+)'
             if ($matches | is-empty) { null } else { $matches.0.id | into int }
         }
-      }
+    }
     | insert process_name {|r|
         if ($r.process? | is-empty) { null } else {
             let matches = $r.process | parse --regex '"(?P<name>[^"]+)"'
             if ($matches | is-empty) { null } else { $matches.0.name }
         }
-      }
+    }
     | reject process recv_q send_q
 }
+
+
+##############################################################################
+module bash {
+    # ── interactive prompt helpers ─────────────────────
+    def bash_prompt [] {
+        let user = $env.USER? | default "user"
+        let host = $nu.os-info.hostname? | default "bash"
+        let raw_pwd = $env.PWD
+        let home = $env.HOME? | default ""
+
+        let current_dir = if $home != "" and $raw_pwd == $home {
+            "~"
+        } else if $home != "" and ($raw_pwd | str starts-with $home) {
+            $raw_pwd | str replace $home "~"
+        } else {
+            $raw_pwd | path basename
+        }
+
+        $"[($user)@($host) ($current_dir)]$ "
+    }
+
+    def bash_has_line_continuation [code: string] {
+        let last_line = (
+            $code
+            | lines
+            | last
+            | default ""
+            | str trim --right
+        )
+        $last_line | str ends-with '\'
+    }
+
+def bash_needs_more [code: string] {
+    if (bash_has_line_continuation $code) { return true }
+
+    let check = (with-env { LANG: "C", LC_ALL: "C", LC_MESSAGES: "C" } {
+        ^bash -n -c $code | complete
+    })
+    let stderr = $check.stderr | default ""
+
+    if $check.exit_code == 0 {
+        return (
+            ($stderr | str contains "here-document") and
+            ($stderr | str contains "delimited by end-of-file")
+        )
+    }
+
+    let incomplete_markers = [
+        "unexpected EOF"
+        "unexpected end of file"
+        "syntax error: unexpected end of file"
+        "looking for matching"
+    ]
+    $incomplete_markers | any {|marker| $stderr | str contains $marker }
+}
+
+    # ── environment diff helpers ───────────────────────
+    def _bash_env_lines_to_record [] {
+        lines
+        | where {|line| $line != "" }
+        | parse --regex '^(?P<name>[^=]+)=(?P<value>.*)$'
+        | reduce -f {} {|row, acc| $acc | upsert $row.name $row.value }
+    }
+
+    def _bash_env_convert_value [name: string, value: string] {
+        let conv = (try { $env.ENV_CONVERSIONS | get -o $name } catch { null })
+        if $conv != null {
+            try { do $conv.from_string $value } catch {
+                if $name in ["PATH", "Path"] { $value | split row (char esep) } else { $value }
+            }
+        } else if $name in ["PATH", "Path"] { $value | split row (char esep) } else { $value }
+    }
+
+    def _bash_env_changed_record [before: record] {
+        transpose name value
+        | reduce -f {} {|row, acc|
+            let old = $before | get -o $row.name
+            if $old == $row.value { $acc } else {
+                let value = (_bash_env_convert_value $row.name $row.value)
+                $acc | upsert $row.name $value
+            }
+        }
+    }
+
+    # ── history helper ─────────────────────────────────
+    def _bash_append_to_history [command: string] {
+        $command | history import
+        try {
+            ls ($nu.config-path | path dirname)
+            | where name =~ "history.sqlite3.bak"
+            | each {|f| rm $f.name }
+        } catch { }
+    }
+
+    # ── main command (exported) ────────────────────────
+    export def --env main [
+        code_or_file?: string,          # optional: command or script path
+        --format(-f): string = "raw"
+    ] {
+        let code = if $code_or_file != null {
+            # Argument given: auto‑detect file vs inline code
+            let expanded = ($code_or_file | path expand)
+            if ($expanded | path exists) {
+                $". '($expanded)'"
+            } else {
+                $code_or_file
+            }
+        } else {
+            # No argument → interactive one‑shot prompt (your original loop)
+            mut lines = []
+            loop {
+                let prompt = if ($lines | is-empty) {
+                    bash_prompt
+                } else {
+                    "bash> "
+                }
+
+                let line = try {
+                    input --reedline $prompt
+                } catch {
+                    return
+                }
+
+                $lines = ($lines | append $line)
+                let current_code = $lines | str join "\n"
+
+                if not (bash_needs_more $current_code) {
+                    break
+                }
+            }
+            $lines | str join "\n"
+        }
+
+        # Save to history
+        _bash_append_to_history $code
+
+        let before_path = (mktemp)
+        let after_path  = (mktemp)
+
+        let raw_output = try {
+            let exec = (
+                ^bash -c 'env > "$1"; eval "$3"; env > "$2"' nu-bash-env $before_path $after_path $code
+                | complete
+            )
+
+            if ($exec.stderr | str trim) != "" {
+                print -e $exec.stderr
+            }
+
+            let before = open --raw $before_path | _bash_env_lines_to_record
+            let after  = open --raw $after_path  | _bash_env_lines_to_record
+            let changes = $after | _bash_env_changed_record $before
+
+            load-env $changes
+            $exec.stdout
+        } catch { null }
+
+        try { rm $before_path $after_path } catch { }
+
+        if $raw_output != null and ($raw_output | str trim) != "" {
+            match ($format | str downcase) {
+                "json" => { $raw_output | from json },
+                "csv" => { $raw_output | from csv },
+                "tsv" => { $raw_output | from tsv },
+                "ssv" => { $raw_output | from ssv },
+                "yaml" | "yml" => { $raw_output | from yaml },
+                "toml" => { $raw_output | from toml },
+                "xml" => { $raw_output | from xml },
+                "nuon" => { $raw_output | from nuon },
+                "url" => { $raw_output | from url },
+                "md" => { $raw_output | from md },
+                "msgpack" => { $raw_output | from msgpack },
+                "msgpackz" => { $raw_output | from msgpackz },
+                "ods" => { $raw_output | from ods },
+                "xlsx" => { $raw_output | from xlsx },
+                "lines" => { $raw_output | lines },
+                "columns" => { $raw_output | detect columns --guess },
+                _ => { $raw_output }
+            }
+        }
+    }
+}
+
+# Make the command available
+use bash
