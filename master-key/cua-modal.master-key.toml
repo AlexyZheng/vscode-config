@@ -217,6 +217,18 @@ doc.kind = "action"
 doc.name = "new line"
 doc.description = "insert a new line after the cursor"
 
+# ── 4. TERMINAL PANEL BINDINGS ──
+
+# ` (Backtick) : Open VS Code bottom terminal and change focus to it
+[[bind]]
+key = "`"
+mode = "-- 📌 EDITOR --"
+command = "workbench.action.terminal.focus"
+doc.kind = "util"
+doc.name = "open terminal"
+doc.description = "open bottom panel terminal and focus it"
+
+
 # =============================================================================
 ## ## Clipboard (CUA)
 # =============================================================================
