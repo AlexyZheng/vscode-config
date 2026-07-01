@@ -223,7 +223,7 @@ doc.description = "insert a new line after the cursor"
 [[bind]]
 key = "`"
 mode = "-- 📌 EDITOR --"
-command = "workbench.action.terminal.focus"
+command = "workbench.action.terminal.toggleTerminal"
 doc.kind = "util"
 doc.name = "open terminal"
 doc.description = "open bottom panel terminal and focus it"
