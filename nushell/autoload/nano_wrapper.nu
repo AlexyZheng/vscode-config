@@ -5,12 +5,11 @@ def nano [
     ...args: string     # The files or arguments you want to pass
     --line-numbers(-l)  # Switch to turn on line numbers for nano fallback
 ] {
-    # Check for installation, a graphical engine, AND that standard input is a terminal
+    # Check for installation, AND that standard input is a terminal
     let vscode_installed = (which code | is-not-empty)
-    let is_graphical = (($env | get -o DISPLAY) != null or ($env | get -o WAYLAND_DISPLAY) != null)
     let is_tty = (is-terminal --stdin)
 
-    if ($vscode_installed and $is_graphical and $is_tty) {
+    if ($vscode_installed and $is_tty) {
         let editor_cmd = if ($env | get -o VISUAL) != null { $env.VISUAL } else { ["code"] }
         let binary = $editor_cmd | first
         let env_flags = $editor_cmd | drop 1
