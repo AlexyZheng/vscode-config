@@ -1,5 +1,5 @@
 
-export def main [] {
+export def --env "ports" [] {
     let raw = (^ss -atunpH | complete)
     if $raw.exit_code != 0 or ($raw.stdout | str trim | is-empty) { return [] }
 
