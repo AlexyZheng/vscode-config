@@ -125,6 +125,19 @@ alias cat = open
 
 alias mk = touch
 
+def "git ignore-all" [] {
+    let untracked = (
+        git status --porcelain 
+        | lines 
+        | where $it =~ '^\?\?' 
 
+        | each { |line| $line | str replace '?? ' '' }
+    )
 
-
+    if ($untracked | is-empty) {
+        print "No untracked files found to add."
+    } else {
+        $untracked | save --append .gitignore
+        print "Untracked files successfully added to .gitignore."
+    }
+}
