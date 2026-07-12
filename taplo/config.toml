@@ -1,7 +1,0 @@
-[schema]
-enabled = true
-
-[[schema.associations]]
-name = "Starship"
-url = "https://starship.rs/config-schema.json"
-file_match = "**/starship.toml"
