@@ -1,0 +1,72 @@
+# The powerline format
+format = "[](bg:none fg:color_a)[ \\[$username@${env_var.SHANNON_MODE}\\] ](bg:color_a fg:color_b)[](bg:color_c fg:color_a)[ $directory ](bg:color_c fg:color_d)[](bg:color_e fg:color_c)[ $git_branch$git_status ](bg:color_e fg:color_f)[ ](fg:color_e)$nodejs$python$rust$java$kotlin$mojo$nix_shell\n$character"
+# Palette definitions
+[palettes.pastel]
+color_a = "#86BBD8" # Light Blue
+color_b = "#000000" # Black text
+color_c = "#33658A" # Darker Blue
+color_d = "#FFFFFF" # White text
+color_e = "#F6D7A7" # Pastel Orange
+color_f = "#000000" # Black text
+
+palette = "pastel"
+
+[username]
+show_always = true
+format = '$user'
+
+[env_var.SHANNON_MODE]
+variable = "SHANNON_MODE"
+format = "$env_value"
+
+[directory]
+style = "fg:#000000 bg:#5DADE2"
+format = '[ $path ]($style)'
+truncation_length = 3
+truncation_symbol = "…/"
+# This forces the module to ignore its own internal logic
+
+[git_branch]
+symbol = " "
+style = "fg:#000000 bg:#F6D7A7"
+format = '[ $symbol$branch ]($style)'
+
+[git_status]
+disabled = false
+style = "fg:#000000 bg:#F6D7A7"
+format = '[ $all_status$ahead_behind ]($style)'
+conflicted = "conflicted"
+ahead = "ahead"
+behind = "behind"
+diverged = "diverged"
+untracked = "untracked"
+stashed = "stashed"
+modified = "modified"
+staged = "staged"
+renamed = "renamed"
+deleted = "deleted"
+
+
+
+# Runtimes (They will appear after the Powerline blocks)
+[nodejs]
+symbol = "󰎙 "
+disabled = false
+[python]
+symbol = " "
+disabled = false
+[rust]
+symbol = " "
+disabled = false
+[java]
+symbol = " "
+disabled = false
+[kotlin]
+symbol = " "
+disabled = false
+[mojo]
+symbol = "🔥 "
+disabled = false
+[nix_shell]
+symbol = " "
+disabled = false
