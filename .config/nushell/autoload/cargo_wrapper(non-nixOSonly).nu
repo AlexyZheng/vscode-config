@@ -59,45 +59,59 @@ export def --wrapped cargo [
     # LOOP 1: SYSTEM INSTALLATION HOOK
     if $action == "install" {
         let package_args = ($args | skip 1)
-        let clean_pkg = ($package_args | where {|x| not ($x | str starts-with "-")} | get -o 0)
-        
-        if ($clean_pkg | is-empty) {
-            # Fallback if installing via --path or --git
-            ^cargo ...$args
-            return
-        }
+        let use_raw_install = ($package_args | any {|x| $x == "--git" or $x == "--path"})
 
-        print $"(ansi green)Running cargo-binstall for ($clean_pkg)...(ansi reset)"
-        
-        mkdir ~/.cargo/bin
+        # Prepare binary tracking
         let cargo_home_bin = ("~/.cargo/bin" | path expand)
+        mkdir $cargo_home_bin
         let binaries_before = (ls $cargo_home_bin | get -o name | path basename)
 
-        ^cargo binstall -y --force ...$package_args
-        
+        mut clean_pkg = ""  # will be used only for binstall fallback guessing
+
+        if $use_raw_install {
+            print $"(ansi cyan)Running raw cargo install for git/path...(ansi reset)"
+            ^cargo install ...$package_args
+        } else {
+            let pkg = ($package_args | where {|x| not ($x | str starts-with "-")} | get -o 0)
+            if ($pkg | is-empty) {
+                # No package name given – pass through to raw cargo (e.g., `cargo install --path .` without explicit name)
+                ^cargo ...$args
+                return
+            }
+            $clean_pkg = $pkg
+            print $"(ansi green)Running cargo-binstall for ($clean_pkg)...(ansi reset)"
+            ^cargo binstall -y --force ...$package_args
+        }
+
         if $env.LAST_EXIT_CODE != 0 {
-            print -e $"(ansi red_bold)Error:(ansi reset) cargo-binstall failed to process ($clean_pkg)."
+            print -e $"(ansi red_bold)Error:(ansi reset) Installation failed."
             error make {msg: "Installation aborted"}
         }
 
         let binaries_after = (ls $cargo_home_bin | get -o name | path basename)
         let new_binaries = ($binaries_after | where {|x| not ($binaries_before | any {|b| $b == $x})})
 
+        # Determine which binaries to migrate
         let binary_list = (if ($new_binaries | is-empty) {
-            let possible_names = [$clean_pkg]
-            let variations = (if ($clean_pkg | str contains "-") {
-                $possible_names | append ($clean_pkg | split row "-" | last)
+            # If no new binaries detected, try to guess from the package name (only for binstall)
+            if ($clean_pkg | is-not-empty) {
+                let possible_names = [$clean_pkg]
+                let variations = (if ($clean_pkg | str contains "-") {
+                    $possible_names | append ($clean_pkg | split row "-" | last)
+                } else {
+                    $possible_names
+                })
+                $variations | where {|name| ($cargo_home_bin | path join $name | path exists)}
             } else {
-                $possible_names
-            })
-            
-            $variations | where {|name| ($cargo_home_bin | path join $name | path exists)}
+                # For raw installs we cannot guess reliably – skip migration
+                []
+            }
         } else {
             $new_binaries
         })
 
         if ($binary_list | is-empty) {
-            print $"(ansi yellow)Warning:(ansi reset) Installation succeeded, but no target binary could be mapped at ($cargo_home_bin). Skipping migration."
+            print $"(ansi yellow)Warning:(ansi reset) No new binary detected at ($cargo_home_bin). Skipping migration."
             return
         }
 
